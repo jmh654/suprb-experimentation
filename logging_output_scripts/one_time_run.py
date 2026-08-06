@@ -16,10 +16,10 @@ from logging_output_scripts import latex_tabulars
 datasets = {
     "combined_cycle_power_plant": "Combined Cycle Power Plant",
     "airfoil_self_noise": "Airfoil Self-Noise",
-    #"concrete_strength": "Concrete Strength",
-    #"energy_cool": "Energy Efficiency Cooling",
-    #"protein_structure": "Physiochemical Properties of Protein Tertiary Structure",
-    #"parkinson_total": "Parkinson's Telemonitoring"
+    "concrete_strength": "Concrete Strength",
+    "energy_cool": "Energy Efficiency Cooling",
+    "protein_structure": "Physiochemical Properties of Protein Tertiary Structure",
+    "parkinson_total": "Parkinson's Telemonitoring"
 }
 
 saga_datasets = {
@@ -227,6 +227,7 @@ def mlruns_to_csv(subdir, normalize): #only for airfoil_self_noise notune bc sti
     if not dupes.empty:
         print("WARNUNG: doppelte run_ids gefunden:")
         with pd.option_context("display.max_colwidth", None, "display.width", None):
+            dupes = dupes[["tag.seed_run" == "WAHR"]]
             print(dupes[["run_id", "start_time", "tags.mlflow.runName"]].sort_values("tags.mlflow.runName"))
     
     dataset = "airfoil_self_noise"
@@ -235,7 +236,7 @@ def mlruns_to_csv(subdir, normalize): #only for airfoil_self_noise notune bc sti
     complexity = "metrics.elitist_complexity"
 
     df = all_runs_df[all_runs_df["tags.mlflow.runName"].str.contains(
-        dataset, case=False, na=False) & (all_runs_df["tags.fold"] == 'True')]
+        dataset, case=False, na=False) & (all_runs_df["tags.fold"] == "True")]
     df = df[["run_id","tags.mlflow.runName", mse, complexity]]
     print(dataset, np.min(df[mse]), np.max(df[mse]), np.min(df[complexity]), np.max(df[complexity]))
 
@@ -252,24 +253,32 @@ def mlruns_to_csv(subdir, normalize): #only for airfoil_self_noise notune bc sti
 def mlruns_to_csv_new(datasets, subdir, normalize):
 
     #all_runs_df = mlflow.search_runs(search_all_experiments=True)
-    all_runs_df = mlflow.search_runs(experiment_ids = [
-        '796385774745469510', #ccpp notune,
-        '514426764301360574', #ccpp tune,
-        '482653026699552589' #airfoil tune, 
+    all_runs_df = mlflow.search_runs(experiment_ids = [ #'485440579075042350' asn notune
+        #'482653026699552589',   #asn tune,
+        #'796385774745469510',   #ccpp notune,
+        #'514426764301360574',   #ccpp tune,
+        '197531564208076366',   #cs notune
+        #'517600193416760241',   #cs tune
+        '368928382700897566'    #ec notune
         ], 
         order_by=["attributes.start_time DESC", "attributes.run_id"]) 
+
+    #all_runs_df = mlflow.search_runs(experiment_ids = ['517600193416760241' ])
     
     all_runs_df = all_runs_df.drop_duplicates(subset=["run_id"]) #drop dupicates, bc of Pagination sometimes duplicates
    
 
     os.makedirs(f"mlruns_csv/{subdir}", exist_ok=True)
 
-    # einmalig zur Kontrolle, nicht in der Schleife
-    dupes = all_runs_df[all_runs_df.duplicated(subset=["tags.mlflow.runName"], keep=False)]
+    # filter out duplicates (keep last) and print duplicates
+    dupes = all_runs_df[all_runs_df.duplicated(subset=["tags.mlflow.runName"], keep='last')]
     if not dupes.empty:
         print("WARNUNG: doppelte run_ids gefunden:")
         with pd.option_context("display.max_colwidth", None, "display.width", None):
             print(dupes[["run_id", "start_time", "tags.mlflow.runName"]].sort_values("tags.mlflow.runName"))
+
+        # tatsächliches Filtern:
+        #all_runs_df = all_runs_df.drop_duplicates(subset=["tags.mlflow.runName"], keep='last')
 
 
     for dataset in datasets:
@@ -427,7 +436,7 @@ if __name__ == '__main__':
     
 
 
-    mlruns_to_csv("Benchmarks", True)
+    #mlruns_to_csv("Benchmarks", True)
     mlruns_to_csv_new(datasets, "Benchmarks", True)
 
     # setting = rd
