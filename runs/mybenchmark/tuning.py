@@ -145,7 +145,7 @@ def suprb_param_space_ns(
     else:
         params.rule_discovery__novelty_calculation__novelty_bias = trial.suggest_float("novelty_bias", 0.3, 0.7)
 
-    # from cli
+    # TODO: maybe tune or keep fixed
     params.rule_discovery__use_population_for_archive = use_current_population
 
     # GA
