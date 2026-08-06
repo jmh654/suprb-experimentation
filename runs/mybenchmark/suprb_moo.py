@@ -46,6 +46,8 @@ spread = logger.metrics_["spread"][-1] """
 
 
 RANDOM_STATE = 42
+NuM_SEEDS = 5
+
 N_CPU = int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -65,7 +67,7 @@ def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
 def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB:
 
     model = SupRB(
-        rule_discovery=ES1xLambda(n_iter=1000, delay=30), #TODO: oder ES1xLambda wie bei deafault? 
+        rule_discovery=ES1xLambda(n_iter=1000, delay=30), #is like suprb default
 
         solution_composition=StrengthParetoEvolutionaryAlgorithm2(
             n_iter=32,
@@ -111,7 +113,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB:
     ) """
 
 def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
-        cv_splitter = ShuffleSplit(n_splits=30, test_size=0.25, random_state=int(rs))
+        cv_splitter = ShuffleSplit(n_splits=20, test_size=0.25, random_state=int(rs))
         print(f"[evaluation] [{datetime.now():%Y-%m-%d %H:%M:%S}] Seed {rs} gestartet", flush=True)
         result = run_evaluation(
             estimator=estimator,
@@ -208,7 +210,7 @@ def run(
     #--------------------------------------------------------------------------
     t1 = time.perf_counter()
 
-    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(8)
+    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(NuM_SEEDS)
     
     seed_results: list[tuple] = []
 

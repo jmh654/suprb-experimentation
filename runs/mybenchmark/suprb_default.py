@@ -54,6 +54,8 @@ from joblib import Parallel, delayed
 
 
 RANDOM_STATE = 42
+NUM_SEEDS = 5
+
 N_CPU = int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -103,7 +105,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB:
     )
 
 def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
-        cv_splitter = ShuffleSplit(n_splits=30, test_size=0.25, random_state=int(rs))
+        cv_splitter = ShuffleSplit(n_splits=20, test_size=0.25, random_state=int(rs))
         print(f"[evaluation] [{datetime.now():%Y-%m-%d %H:%M:%S}] Seed {rs} gestartet", flush=True)
         result = run_evaluation(
             estimator=estimator,
@@ -204,7 +206,7 @@ def run(
     #--------------------------------------------------------------------------
     t1 = time.perf_counter()
 
-    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(8)
+    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(NUM_SEEDS)
     
     seed_results: list[tuple] = []
 

@@ -30,11 +30,6 @@ from sklearn.linear_model import Ridge
 from sklearn.utils import Bunch, shuffle
 from sklearn.model_selection import ShuffleSplit
 
-#from experiments import Experiment
-#from experiments.evaluation import CrossValidate
-# from experiments.mlflow import log_experiment
-# from experiments.parameter_search import param_space
-# from experiments.parameter_search.optuna import OptunaTuner
 from problems import scale_X_y
 
 from suprb import rule, SupRB
@@ -56,6 +51,7 @@ from functools import partial
 
 
 RANDOM_STATE = 42
+NUM_SEEDS = 5
 N_CPU = int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -64,16 +60,15 @@ MLFLOW_URI    = os.path.join(_HERE, "mlruns")
 OPTUNA_DB_DIR = os.path.join(_HERE, "optuna_dbs")
 os.makedirs(OPTUNA_DB_DIR, exist_ok=True)
 
+
 def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
     method_name = f"load_{name}"
     from problems import datasets
     if hasattr(datasets, method_name):
         return getattr(datasets, method_name)(**kwargs)
     raise ValueError(f"Kein Dataset '{name}' gefunden (erwartet: problems.datasets.load_{name})")
+  
 
-
-
-    
 def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current_population: bool) -> SupRB:
     return SupRB(
         rule_discovery=ns.NoveltySearch(
@@ -93,7 +88,6 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current
         logger=CombinedLogger(
             [('stdout', StdoutLogger()), ('default', DefaultLogger())]),
     )
-    
     
     """ SupRB(
         rule_discovery=es.ES1xLambda(
@@ -124,7 +118,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current
     ) """
 
 def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
-        cv_splitter = ShuffleSplit(n_splits=30, test_size=0.25, random_state=int(rs))
+        cv_splitter = ShuffleSplit(n_splits=20, test_size=0.25, random_state=int(rs))
         print(f"[evaluation] [{datetime.now():%Y-%m-%d %H:%M:%S}] Seed {rs} gestartet", flush=True)
         result = run_evaluation(
             estimator=estimator,
@@ -146,7 +140,6 @@ def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
 @click.option("-r", "--n_rules",          type=int, default=4,                    show_default=True)
 @click.option("-i", "--n_initial_rules",  type=int, default=4,                    show_default=True)
 @click.option('-a', '--use_current_population', type=click.BOOL, default=False                     )
-#click.option("--tune/--no-tune",                   default=True,                 show_default=True)
 def run(
     problem: str,
     job_id: str,
@@ -163,7 +156,7 @@ def run(
 
 
     
-    
+
     t0 = time.perf_counter()
 
     #-----------------------------------------------------------------------
@@ -230,7 +223,7 @@ def run(
     #--------------------------------------------------------------------------
     t1 = time.perf_counter()
 
-    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(8)
+    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(NUM_SEEDS)
     
     seed_results: list[tuple] = []
 
@@ -246,8 +239,6 @@ def run(
         tuning_walltime_s=round(tuning_walltime, 2),
         evaluation_walltime_s=round(evaluation_walltime, 2),
     )
-
-
 
     #-------------------------------------------------------------------------
     # MLflow Logging
