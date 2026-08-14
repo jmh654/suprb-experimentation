@@ -1,3 +1,7 @@
+""" 
+finds root from run_id or run_name and
+deletes recursicely all runs in the subtree of the given run_id, including the root run itself.
+"""
 import mlflow
 import pandas as pd
 
@@ -12,7 +16,6 @@ def load_run(experiment_id: str) -> pd.DataFrame:
     if df.empty:
         raise SystemExit(f"Keine Runs im Experiment '{experiment_id}' gefunden.")
 
-    # Spalten, die wir garantiert brauchen, falls Runs sie nicht gesetzt haben
     for col in ("tags.mlflow.runName", "tags.mlflow.parentRunId"):
         if col not in df.columns:
             df[col] = None
@@ -21,19 +24,19 @@ def load_run(experiment_id: str) -> pd.DataFrame:
 def _find_root_run_id_by_child_run_id(df: pd.DataFrame, run_id: str) -> str:
     """Findet die run_id des Root-Runs (parentRunId ist NaN/leer) fuer den gegebenen Kind-Run."""
 
-    # Finde den Kind-Run
+    # find child run
     child_row = df[df["run_id"] == run_id]
     if child_row.empty:
         raise SystemExit(f"Run mit ID '{run_id}' nicht gefunden.")
 
-    # Holen Sie sich die parentRunId des Kind-Runs
+    # get parentRunId of the child run
     parent_run_id = child_row.iloc[0][PARENT_TAG]
 
-    # Wenn parentRunId leer ist, ist der Run bereits ein Root-Run
+    # If the parentRunId is NaN or empty, the child run is the root run itself
     if pd.isna(parent_run_id) or parent_run_id == "":
         return run_id
 
-    # Andernfalls suchen wir den Root-Run
+    # Recursively find the root run_id by looking up the parent run
     return _find_root_run_id_by_child_run_id(df, parent_run_id)
 
 
@@ -100,6 +103,31 @@ def delete_run(run_id: str, df: pd.DataFrame) -> None:
         print(f"Deleting run {run_id} ({run_name_to_print})")
         mlflow.delete_run(run_id)
 
+def delete_folds_6_7_of_run(run_id: str, df: pd.DataFrame) -> None:
+    # Collect all descendant run IDs
+    run_ids_to_delete = _collect_descendant_ids(df, run_id)
+
+    # Filter out runs with names containing "fold_6" or "fold_7"
+    filtered_run_ids = []
+    for run_id in run_ids_to_delete:
+        match = df.loc[df["run_id"] == run_id, "tags.mlflow.runName"]
+        if match.empty:
+            print(f"WARNUNG: run_id {run_id} nicht im DataFrame gefunden, überspringe.")
+            continue
+        run_name_to_print = match.iloc[0]
+        if "fold_6" in run_name_to_print or "fold_7" in run_name_to_print:
+            filtered_run_ids.append(run_id)
+
+    # Delete the filtered runs
+    for run_id in filtered_run_ids:
+        match = df.loc[df["run_id"] == run_id, "tags.mlflow.runName"]
+        if match.empty:
+            print(f"WARNUNG: run_id {run_id} nicht im DataFrame gefunden, überspringe.")
+            continue
+        run_name_to_print = match.iloc[0]
+        print(f"Deleting run {run_id} ({run_name_to_print})")
+        #mlflow.delete_run(run_id)
+
 def print_subtree(run_id: str, df: pd.DataFrame) -> None:
     #get the root run id for the given run_id
     root_run_id = _find_root_run_id_by_child_run_id(df, run_id)
@@ -124,57 +152,20 @@ def _print_run_info(run_id: str, df: pd.DataFrame) -> None:
 def main() -> None:
     #run_id = "532f8b65489d43d9a016bb72e6241b08"  
     run_ids = [
-        #ccpp tune  incomlete runs:
-        # "1e5214b52bb84cdd9389411f70c2ec83",
-        # "8e9efc0348cb48c9a01848608df2add9",
+        "cee5138e07cc4201981e026439d91835",
+        ]
+    #run_name = "airfoil_self_noise__ni64__nr16__nir24__tune"
 
-        #asn_tune_root_dublicates_all
-        "365aef2633ae430b8d431ff046b5cead", 
-        # "38aed6c6b3b841e6800a9920e131595e", 
-        # "bdef21b91df642bda686bbd096fcbbb5", 
-        # "306a5cf33b6748d7a7f4ddaaf367d2c8", 
-        # "2b65a4410b1d4785800993334c21e151", 
 
-        # "6f3e82ec6cf84405be177b7484288550", 
-        # "f0bc467e20714a6685ad278dee737041", 
-        # "cd7b49aaff6245feb15ee53fc467eb07", 
-        # "371be829e8e842c4a836f9a1f95cecd3", 
-        # "817ee2f591c74e7e9b4b1f6a49d293f0", 
-        # "333a5013f2bf43268113aff11dae44d4",
-
-        # "de5267ea1ce0460ab000aeb893872132", 
-        # "a36fda1969064e1c8bca2f7a854027b2", 
-        # "9ddcdc195cdb4715a5e3fcb28d4dd971", 
-        # "7185018ee3794b7dac9ef98b5d753acb", 
-        # "e6d4fd21f8b94be39d358874120a5007", 
-
-        # "0389a51028c7497388010244d1f1841b", 
-        # "ba612834fa49443a9be93184518f6000", 
-        # "14058d4d13c14cfdae7dd69fbffa2b79", 
-
-        # "ed338d2f3bde44f584029b9b200d9456",
-        # "d0f150e8b2a4415c8fda096e140c381f", 
-        # "37cda136c1f540baa10cbf4c074ef9b4", 
-        # "304d4b9c96c6494b95359c250219bf7b", 
-        # "5475b023fd134b379d51c3afbd8dca62", 
-        # "c08e731d690c4014aa7483a74291af80",
-
-        # "431ebcce5f8c470fb176503ca756e6cb", 
-        # "29d5805f8edc47b5841c9294df5b7bf9", 
-        # "ff7de5c6f36947ce9425159f7d0e2e3b", 
-        # "c98ce968128d4bffb47fa651716d12f1", 
-        # "b4ab745078b243cb9dc7260642e4b728"     
-
-    ]
-    run_name = "airfoil_self_noise__ni128__nr8__nir8"
-    experiment_id = '482653026699552589'
+    experiment_id = '514426764301360574'
         #'485440579075042350'    #asn notune,
         #'482653026699552589',   #asn tune,
         #'796385774745469510',   #ccpp notune,
         #'514426764301360574',   #ccpp tune,
         #'197531564208076366',   #cs notune
         #'517600193416760241',   #cs tune
-        #'368928382700897566'    #ec notune
+        #'368928382700897566',   #ec notune
+        #'450111382996578006',    #ps notune
 
     df = load_run(experiment_id)
     df = df.drop_duplicates(subset=["run_id"])
@@ -189,7 +180,8 @@ def main() -> None:
         df_runs = df[df["tags.mlflow.runName"].str.contains(run_name, case=False, na=False)]
         root_id = _find_root_run_id_by_name(df_runs, run_name)
         print(f"Root-Run für run_name='{run_name}' gefunden: run_id={root_id}")
-        delete_run(root_id, df)
+        #delete_folds_6_7_of_run(root_id, df) #deletes only runs with fold_6 or fold_7 in the name
+        #delete_run(root_id, df)
     else:
         print(f"{len(run_ids)} run_id(s) angegeben: {run_ids}")
         for current_id in run_ids:
@@ -198,11 +190,10 @@ def main() -> None:
             
             root_id = _find_root_run_id_by_child_run_id(df, current_id)
             #print(f"Root-Run für run_id='{current_id}' gefunden: run_id={root_id}")
-            #_print_run_info(root_id, df) #prints only the run itself
+            _print_run_info(root_id, df) #prints only the run itself
 
+            #delete_folds_6_7_of_run(root_id, df) #deletes only runs with fold_6 or fold_7 in the name
             delete_run(root_id, df) #deletes subtree of id, does NOT find root 
-
-    
 
 
 if __name__ == "__main__":
