@@ -32,6 +32,9 @@ from sklearn.model_selection import ShuffleSplit
 
 from problems import scale_X_y
 
+import suprb
+from suprb import rule, SupRB
+
 from suprb import rule, SupRB
 from suprb.logging.combination import CombinedLogger
 from suprb.logging.default import DefaultLogger
@@ -46,9 +49,9 @@ from tuning import run_tuning, suprb_param_space, suprb_param_space_ns
 
 import os
 from joblib import Parallel, delayed
+from joblib import parallel_backend
 
 from functools import partial
-
 
 RANDOM_STATE = 42
 NUM_SEEDS = 5
@@ -61,6 +64,70 @@ OPTUNA_DB_DIR = os.path.join(_HERE, "optuna_dbs")
 os.makedirs(OPTUNA_DB_DIR, exist_ok=True)
 
 
+# ============================================================
+# TEMPORÄRER DEBUG-PATCH - vor Merge wieder entfernen!
+# Patcht RouletteWheel.__call__, um zu loggen, WANN und WARUM
+# sum(fitnesses) == 0 bzw. NaN auftritt. Verhalten bleibt
+# unverändert - der Original-Call wird danach ganz normal
+# ausgeführt (inkl. des bestehenden try/except-Verhaltens).
+# ============================================================
+import numpy as np
+from suprb.optimizer.rule.selection import RouletteWheel
+
+_orig_roulette_call = RouletteWheel.__call__
+_debug_call_counter = {"n": 0}
+
+
+""" def _debug_roulette_call(self, rules, random_state, size=1):
+    rules_ = [rule for rule in rules if rule.fitness_ != -np.inf]
+
+    if rules_:
+        fitnesses = np.array([rule.fitness_ for rule in rules_])
+        total = np.sum(fitnesses)
+        problematic = (total == 0) or np.isnan(total) or np.any(np.isnan(fitnesses))
+
+        if problematic:
+            _debug_call_counter["n"] += 1
+            n = _debug_call_counter["n"]
+            print(f"\n=== DEBUG RouletteWheel #{n} ===")
+            print(f"  rules total (vor -inf-Filter): {len(rules)}")
+            print(f"  rules_ (nach -inf-Filter):      {len(rules_)}")
+            print(f"  fitness_ Werte in rules_:        {fitnesses}")
+            print(f"  sum(fitnesses) = {total}")
+            print(f"  alle 0?   {np.all(fitnesses == 0)}")
+            print(f"  alle -inf gefiltert? ursprüngliche fitness_ aller rules:")
+            print(f"    {[r.fitness_ for r in rules]}")
+            print("=" * 45)
+
+    return _orig_roulette_call(self, rules, random_state, size) """
+
+def _debug_roulette_call(self, rules, random_state, size=1):
+    raw_fitnesses = np.array([r.fitness_ for r in rules])
+    print(f"[DEBUG] raw fitness_ (unfiltered): {raw_fitnesses}", flush=True)
+    print(f"[DEBUG] sum: {np.sum(raw_fitnesses)}", flush=True)
+    return _orig_roulette_call(self, rules, random_state, size)
+
+
+RouletteWheel.__call__ = _debug_roulette_call
+print(
+    "DEBUG PATCH:",
+    RouletteWheel.__call__.__name__,
+    flush=True
+)
+print(">>> DEBUG PATCH ACTIVE <<<", flush=True)   # <- diese Zeile ergänzen
+# ============================================================
+# ENDE DEBUG-PATCH
+# ============================================================
+
+import suprb.optimizer.rule.selection as sel_mod
+print("selection.py Pfad:", sel_mod.__file__, flush=True)
+print("RouletteWheel is patched class?",
+      RouletteWheel is sel_mod.RouletteWheel, flush=True)
+print("RouletteWheel.__call__ patched?",
+      RouletteWheel.__call__ is _debug_roulette_call, flush=True)
+print("id(RouletteWheel):", id(RouletteWheel), flush=True)
+
+
 def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
     method_name = f"load_{name}"
     from problems import datasets
@@ -70,7 +137,7 @@ def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
   
 
 def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current_population: bool) -> SupRB:
-    return SupRB(
+    estimator = SupRB(
         rule_discovery=ns.NoveltySearch(
             init=rule.initialization.MeanInit(fitness=rule.fitness.VolumeWu(),
                                               model=Ridge(alpha=0.01,
@@ -88,6 +155,11 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current
         logger=CombinedLogger(
             [('stdout', StdoutLogger()), ('default', DefaultLogger())]),
     )
+    sel_instance = getattr(suprb.optimizer.rule.selection, "RouletteWheel")()
+    print("Instanz-Klasse id:", id(type(sel_instance)), flush=True)
+    print("Ist gepatcht?", type(sel_instance).__call__ is _debug_roulette_call, flush=True)
+    return estimator
+
     
     """ SupRB(
         rule_discovery=es.ES1xLambda(
@@ -195,22 +267,23 @@ def run(
         )
 
         print(f"Starting tuning for {study_name}")
-        tuned_params = run_tuning(
-            estimator=estimator,
-            X=X,
-            y=y,
-            param_space_fn=param_space_fn, 
-            study_name=study_name,
-            storage_url=db_url,
-            n_trials=1000,
-            timeout=60*60*24,  # 24 hours
-            cv=4,
-            n_jobs_cv=N_CPU, #parallelität innerhalb cv jedes trials 
-            n_jobs=1, #prallelität der trials, sqlite -> n_jobs=1
-            random_state=RANDOM_STATE,
-            scoring="neg_mean_squared_error",
-            verbose=1,
-        )
+        with parallel_backend("threading"): #TODO: remove after debug
+            tuned_params = run_tuning(
+                estimator=estimator,
+                X=X,
+                y=y,
+                param_space_fn=param_space_fn, 
+                study_name=study_name,
+                storage_url=db_url,
+                n_trials=50, #TODO: nach debug wieder auf 1000 setzen
+                timeout=60*60*24,  # 24 hours
+                cv=4,
+                n_jobs_cv=1, #parallelität innerhalb cv jedes trials #TODO nach debug wieder n_jobs_cv=N_CPU setzen
+                n_jobs=1, #prallelität der trials, sqlite -> n_jobs=1
+                random_state=RANDOM_STATE,
+                scoring="neg_mean_squared_error",
+                verbose=1,
+            )
 
         tuning_walltime = time.perf_counter() - t0
         print(f"[tuning] Tuning completed in {tuning_walltime:.2f} seconds")
