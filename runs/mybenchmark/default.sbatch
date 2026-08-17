@@ -11,7 +11,7 @@
 
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=20G
+#SBATCH --mem=10G
 #SBATCH --time=96:00:00             #format: HH:MM:SS, tuning 24h + evaluation 48h + mlflow 24h = 96h, eval für 96,128_16_*: 48h pro seed
 #SBATCH --job-name=suprb_default   # Job-Name, %x in --output
 #SBATCH --output=stdout/%x-%j.out                      # %x = job-name, %j = job-id
@@ -24,27 +24,27 @@ FLAG="${FLAG:-0}" #default 0 if not set
 case "${FLAG}" in
   0) 
     echo "Running suprb_default --no-tune" 
-    experiment="runs/mybenchmark/suprb_default" #path 
+    experiment="runs/mybenchmark/suprb_default.py" #path 
     EXTRA_ARGS="--no-tune"
     ;;
   1) 
     echo "Running suprb_default --tune" 
-    experiment="runs/mybenchmark/suprb_default" #path 
+    experiment="runs/mybenchmark/suprb_default.py" #path 
     EXTRA_ARGS="--tune"
     ;;
   2) 
     echo "Running suprb_moo" 
-    experiment="runs/mybenchmark/suprb_moo" #path 
+    experiment="runs/mybenchmark/suprb_moo.py" #path 
     EXTRA_ARGS=""
     ;;
   3) 
     echo "Running suprb_ns --use_current_population true" 
-    experiment="runs/mybenchmark/suprb_ns" #path 
+    experiment="runs/mybenchmark/suprb_ns.py" #path 
     EXTRA_ARGS="-a true" #use_current_population true
     ;;
   4) 
     echo "Running suprb_ns --use_current_population false" 
-    experiment="runs/mybenchmark/suprb_ns" #path 
+    experiment="runs/mybenchmark/suprb_ns.py" #path 
     EXTRA_ARGS="-a false" #use_current_population false
     ;;
   *) echo "Unknown FLAG: ${FLAG}" ; exit 1 ;;

@@ -21,7 +21,7 @@ def check_dataframes(df, dataset, label):
     
     for n in (4, 8, 16, 24, 32, 48, 64, 96, 128):
         df_ni = df[df["tags.mlflow.runName"].str.contains(f"_ni{n}_", case=False, na=False)]
-        if len(df_ni) != 4980:
+        if len(df_ni) not in (4980, 2120):
             print(f"{dataset}{label} _ni{n}_ not finished: {len(df_ni)} runs instead of 4980")
             continue
     
@@ -30,8 +30,8 @@ def check_dataframes(df, dataset, label):
             for z in (0, 8, 16, 24, 32):
                 pattern = rf"_ni{x}__nr{y}__nir{z}_|_ni{x}__nr{y}__nir{z}\." #nix__nry__nirz_ || nix__nry__nirz.
                 df_job = df[df["tags.mlflow.runName"].str.contains(pattern, case=False, na=False, regex=True)]
-                if len(df_job) != 249:
-                    print(f"{dataset}{label} _ni{x}__nr{y}__nir{z}_ not finished: {len(df_job)} runs instead of 249")
+                if len(df_job) not in (249, 106):
+                    print(f"{dataset}{label} _ni{x}__nr{y}__nir{z}_ not finished: {len(df_job)} runs instead of 249/106")
                     continue
 
     
@@ -67,15 +67,15 @@ def mlruns_to_csv_new(datasets):
     #all_runs_df = mlflow.search_runs(search_all_experiments=True)
     all_runs_df = mlflow.search_runs(experiment_ids = [ #'485440579075042350' ##asn notune
         #'123220006015332186',    ##ec_tune
-        #'197531564208076366',   ##cs notune
+        '197531564208076366',   ##cs notune
         #'368928382700897566',    ##ec notune
         #'395554797498159653',   #asn ns_gen
         #'450111382996578006',    #ps notune
         #'482653026699552589',   #asn tune,
-        #'514426764301360574',   #ccpp tune,
+        #'514426764301360574',   #ccpp tune, 
         #'517600193416760241',   #cs tune
         #'533779333040112522',   #pt notune
-        #'796385774745469510',   #ccpp notune, --> oom kills
+        #'796385774745469510',   #ccpp notune, 
         #'886848344391242984'    # asn moo
         ]) 
     
@@ -107,7 +107,7 @@ def mlruns_to_csv_new(datasets):
 
             check_dataframes(df, dataset, label)
 
-            df.to_csv(f"{dataset}{label}_all.csv", index=False)
+            df.to_csv(f"csv_all/{dataset}{label}_all.csv", index=False)
 
 def main():
     #mlruns_to_csv()
