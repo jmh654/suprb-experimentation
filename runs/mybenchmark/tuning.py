@@ -54,7 +54,7 @@ def suprb_param_space_ns(
     trial: Trial,
     X: np.ndarray,
     ns_type: str = "MCNS",
-    use_current_population: bool = False,
+    #use_current_population: bool = False,
 ) -> dict:
     params = Bunch()
 
@@ -146,7 +146,8 @@ def suprb_param_space_ns(
         params.rule_discovery__novelty_calculation__novelty_bias = trial.suggest_float("novelty_bias", 0.3, 0.7)
 
     # TODO: maybe tune or keep fixed
-    params.rule_discovery__use_population_for_archive = use_current_population
+    params.rule_discovery__use_population_for_archive = trial.suggest_categorical("use_population_for_archive", [True, False])
+
 
     # GA
     params.solution_composition__selection = trial.suggest_categorical(

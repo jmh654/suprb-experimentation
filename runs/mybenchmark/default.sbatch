@@ -11,8 +11,8 @@
 
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=10G
-#SBATCH --time=96:00:00             #format: HH:MM:SS, tuning 24h + evaluation 48h + mlflow 24h = 96h, eval für 96,128_16_*: 48h pro seed
+#SBATCH --mem=4G
+#SBATCH --time=120:00:00             #format: HH:MM:SS, tuning 24h + evaluation 48h + mlflow 24h = 96h, eval für 96,128_16_*: 48h pro seed
 #SBATCH --job-name=suprb_default   # Job-Name, %x in --output
 #SBATCH --output=stdout/%x-%j.out                      # %x = job-name, %j = job-id
 
@@ -38,14 +38,14 @@ case "${FLAG}" in
     EXTRA_ARGS=""
     ;;
   3) 
-    echo "Running suprb_ns --use_current_population true" 
+    echo "Running suprb_ns" 
     experiment="runs/mybenchmark/suprb_ns.py" #path 
-    EXTRA_ARGS="-a true" #use_current_population true
+    EXTRA_ARGS="" 
     ;;
   4) 
-    echo "Running suprb_ns --use_current_population false" 
+    echo "Running suprb_ns_moo" 
     experiment="runs/mybenchmark/suprb_ns.py" #path 
-    EXTRA_ARGS="-a false" #use_current_population false
+    EXTRA_ARGS=""
     ;;
   *) echo "Unknown FLAG: ${FLAG}" ; exit 1 ;;
 esac

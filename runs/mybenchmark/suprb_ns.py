@@ -71,14 +71,14 @@ os.makedirs(OPTUNA_DB_DIR, exist_ok=True)
 # unverändert - der Original-Call wird danach ganz normal
 # ausgeführt (inkl. des bestehenden try/except-Verhaltens).
 # ============================================================
-import numpy as np
+""" import numpy as np
 from suprb.optimizer.rule.selection import RouletteWheel
 
 _orig_roulette_call = RouletteWheel.__call__
 _debug_call_counter = {"n": 0}
 
 
-""" def _debug_roulette_call(self, rules, random_state, size=1):
+def _debug_roulette_call(self, rules, random_state, size=1):
     rules_ = [rule for rule in rules if rule.fitness_ != -np.inf]
 
     if rules_:
@@ -99,7 +99,7 @@ _debug_call_counter = {"n": 0}
             print(f"    {[r.fitness_ for r in rules]}")
             print("=" * 45)
 
-    return _orig_roulette_call(self, rules, random_state, size) """
+    return _orig_roulette_call(self, rules, random_state, size)
 
 def _debug_roulette_call(self, rules, random_state, size=1):
     raw_fitnesses = np.array([r.fitness_ for r in rules])
@@ -114,19 +114,19 @@ print(
     RouletteWheel.__call__.__name__,
     flush=True
 )
-print(">>> DEBUG PATCH ACTIVE <<<", flush=True)   # <- diese Zeile ergänzen
+print(">>> DEBUG PATCH ACTIVE <<<", flush=True)   # <- diese Zeile ergänzen """
 # ============================================================
 # ENDE DEBUG-PATCH
 # ============================================================
 
-import suprb.optimizer.rule.selection as sel_mod
+""" import suprb.optimizer.rule.selection as sel_mod
 print("selection.py Pfad:", sel_mod.__file__, flush=True)
 print("RouletteWheel is patched class?",
       RouletteWheel is sel_mod.RouletteWheel, flush=True)
 print("RouletteWheel.__call__ patched?",
       RouletteWheel.__call__ is _debug_roulette_call, flush=True)
 print("id(RouletteWheel):", id(RouletteWheel), flush=True)
-
+ """
 
 def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
     method_name = f"load_{name}"
@@ -136,7 +136,7 @@ def load_dataset(name: str, **kwargs) -> tuple[np.ndarray, np.ndarray]:
     raise ValueError(f"Kein Dataset '{name}' gefunden (erwartet: problems.datasets.load_{name})")
   
 
-def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current_population: bool) -> SupRB:
+def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB: #use_current_population: bool) -> SupRB:
     estimator = SupRB(
         rule_discovery=ns.NoveltySearch(
             init=rule.initialization.MeanInit(fitness=rule.fitness.VolumeWu(),
@@ -144,7 +144,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current
                                                           random_state=RANDOM_STATE)),
             origin_generation=origin.SquaredError(),
             mutation=mutation.HalfnormIncrease(),
-            use_population_for_archive=use_current_population,
+            #use_population_for_archive=use_current_population,
         ),
         #solution_composition=ga.GeneticAlgorithm(n_iter=32, population_size=32, selection=ga.selection.Tournament()),
         solution_composition=ga.GeneticAlgorithm(n_iter=32, population_size=32), #TODO: so? tunen? 
@@ -155,9 +155,9 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int, use_current
         logger=CombinedLogger(
             [('stdout', StdoutLogger()), ('default', DefaultLogger())]),
     )
-    sel_instance = getattr(suprb.optimizer.rule.selection, "RouletteWheel")()
-    print("Instanz-Klasse id:", id(type(sel_instance)), flush=True)
-    print("Ist gepatcht?", type(sel_instance).__call__ is _debug_roulette_call, flush=True)
+    #sel_instance = getattr(suprb.optimizer.rule.selection, "RouletteWheel")()
+    #print("Instanz-Klasse id:", id(type(sel_instance)), flush=True)
+    #print("Ist gepatcht?", type(sel_instance).__call__ is _debug_roulette_call, flush=True)
     return estimator
 
     
@@ -211,20 +211,20 @@ def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
 @click.option("-n", "--n_iter",           type=int, default=32,                   show_default=True)
 @click.option("-r", "--n_rules",          type=int, default=4,                    show_default=True)
 @click.option("-i", "--n_initial_rules",  type=int, default=4,                    show_default=True)
-@click.option('-a', '--use_current_population', type=click.BOOL, default=False                     )
+#@click.option('-a', '--use_current_population', type=click.BOOL, default=False                     )
 def run(
     problem: str,
     job_id: str,
     n_iter: int,
     n_rules: int,
     n_initial_rules: int,
-    use_current_population: bool
+    #use_current_population: bool
 ):
     ns_type = 'MCNS'
-    label = "ns_population" if use_current_population else "ns_generational"
+    #label = "ns_population" if use_current_population else "ns_generational"
 
     print(f"[run] Problem={problem}  job_id={job_id}  n_iter={n_iter}  "
-        f"n_rules={n_rules}  n_initial_rules={n_initial_rules}  {ns_type} use_current_population={use_current_population}")
+        f"n_rules={n_rules}  n_initial_rules={n_initial_rules}  {ns_type}") #use_current_population={use_current_population}")
 
 
     
@@ -243,7 +243,7 @@ def run(
     # Estimator
     #-----------------------------------------------------------------------
 
-    grid_params = dict(n_iter=n_iter, n_rules=n_rules, n_initial_rules=n_initial_rules, use_current_population=use_current_population)
+    grid_params = dict(n_iter=n_iter, n_rules=n_rules, n_initial_rules=n_initial_rules) #use_current_population=use_current_population)
     estimator = build_estimator(**grid_params)
 
     #-------------------------------------------------------------------------
@@ -253,7 +253,7 @@ def run(
     tuned_params: dict = {}
     tuning_walltime: float = 0.0
 
-    study_name = f"{problem}__ni{n_iter}__nr{n_rules}__nir{n_initial_rules}__{ns_type}__{label}"
+    study_name = f"{problem}__ni{n_iter}__nr{n_rules}__nir{n_initial_rules}__{ns_type}" #__{label}"
     
     if True: 
         sub_dir = f"{problem}_{ns_type}"
@@ -263,27 +263,26 @@ def run(
         param_space_fn = partial(
             suprb_param_space_ns,   #ns prameter space
             ns_type=ns_type,                              # z.B. "MCNS"
-            use_current_population=use_current_population, # kommt aus dem CLI-Flag -a
+            #use_current_population=use_current_population, # kommt aus dem CLI-Flag -a
         )
 
         print(f"Starting tuning for {study_name}")
-        with parallel_backend("threading"): #TODO: remove after debug
-            tuned_params = run_tuning(
-                estimator=estimator,
-                X=X,
-                y=y,
-                param_space_fn=param_space_fn, 
-                study_name=study_name,
-                storage_url=db_url,
-                n_trials=50, #TODO: nach debug wieder auf 1000 setzen
-                timeout=60*60*24,  # 24 hours
-                cv=4,
-                n_jobs_cv=1, #parallelität innerhalb cv jedes trials #TODO nach debug wieder n_jobs_cv=N_CPU setzen
-                n_jobs=1, #prallelität der trials, sqlite -> n_jobs=1
-                random_state=RANDOM_STATE,
-                scoring="neg_mean_squared_error",
-                verbose=1,
-            )
+        tuned_params = run_tuning(
+            estimator=estimator,
+            X=X,
+            y=y,
+            param_space_fn=param_space_fn, 
+            study_name=study_name,
+            storage_url=db_url,
+            n_trials=1000, 
+            timeout=60*60*24,  # 24 hours
+            cv=4,
+            n_jobs_cv=N_CPU, #parallelität innerhalb cv jedes trials 
+            n_jobs=1, #prallelität der trials, sqlite -> n_jobs=1
+            random_state=RANDOM_STATE,
+            scoring="neg_mean_squared_error",
+            verbose=1,
+        )
 
         tuning_walltime = time.perf_counter() - t0
         print(f"[tuning] Tuning completed in {tuning_walltime:.2f} seconds")
@@ -317,7 +316,7 @@ def run(
     # MLflow Logging
     #--------------------------------------------------------------------------
     
-    experiment_name = f"SupRB | problem={problem} | {ns_type} | {label}" 
+    experiment_name = f"SupRB | problem={problem} | {ns_type}" #| {label}" 
     mlflow.set_tracking_uri(MLFLOW_URI)
     mlflow.set_experiment(experiment_name)
 

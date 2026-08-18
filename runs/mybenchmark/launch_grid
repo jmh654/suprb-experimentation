@@ -24,13 +24,13 @@ FLAG="${2:-0}"   # zweites Argument, 0 notune, 1 tune, 2 moo, 3 ns
 LABEL="notune"
 [[ "${FLAG}" == "1" ]] && LABEL="tune"
 [[ "${FLAG}" == "2" ]] && LABEL="moo"
-[[ "${FLAG}" == "3" ]] && LABEL="ns_population_true"
-[[ "${FLAG}" == "4" ]] && LABEL="ns_population_false"
+[[ "${FLAG}" == "3" ]] && LABEL="ns"
+[[ "${FLAG}" == "4" ]] && LABEL="ns_moo"
             
 
-N_ITER_VALUES=(64)      #(4 8 16 24 32 48 64 96 128)
-N_RULES_VALUES=(2 4 8 16)  #(2 4 8 16)
-N_INITIAL_RULES_VALUES=(0 8 16 24 32) #(0 8 16 24 32)
+N_ITER_VALUES=(4)      #(4 8 16 24 32 48 64 96 128)
+N_RULES_VALUES=(4)  #(2 4 8 16)
+N_INITIAL_RULES_VALUES=(0) #(0 8 16 24 32)
 
 mkdir -p stdout
 
