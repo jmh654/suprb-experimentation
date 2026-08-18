@@ -252,6 +252,7 @@ def validate_row_counts(df: pd.DataFrame, n_iter: int, expected_seeds: int = 5, 
 
 
 def main():
+    print("mlrun4Analysis")
     client = MlflowClient()
     fold_runs_df = get_fold_runs()
     parsed_df = add_parsed_columns(fold_runs_df)
