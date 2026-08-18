@@ -54,6 +54,7 @@ from __future__ import annotations
 import re
 import warnings
 from typing import Optional
+import os
 
 import mlflow
 import pandas as pd
@@ -62,8 +63,9 @@ from mlflow.tracking import MlflowClient
 # ---------------------------------------------------------------------------
 # Konfiguration - hier anpassen
 # ---------------------------------------------------------------------------
-
-# mlflow.set_tracking_uri("file:///pfad/zu/deinem/mlruns")  
+_HERE = os.path.dirname(os.path.abspath(__file__))
+MLFLOW_URI = os.path.join(_HERE, "mlruns")
+mlflow.set_tracking_uri(MLFLOW_URI)
 
 EXPERIMENT_IDS: Optional[list[str]] = ['485440579075042350']      # z.B. ['482653026699552589', ...]
 EXPERIMENT_NAMES: Optional[list[str]] = None    # alternativ per Name, z.B. ["SupRB | problem=airfoil_self_noise | tune"]
@@ -135,20 +137,41 @@ def parse_run_name(run_name: str) -> Optional[dict]:
         "fold_index": int(match.group("fold")),
     }
 
-def filter_seed_and_fold_index(df: pd.DataFrame) -> pd.DataFrame:
+def add_parsed_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Wendet parse_run_name() auf jede Zeile an und hängt die geparsten Felder
+    (dataset, n_iter, n_rules, n_initial_rules, label, seed_index, fold_index) an."""
     if RUNNAME_COL not in df.columns:
-        raise KeyError(f"Spalte '{RUNNAME_COL}' fehlt im DataFrame. ")
+        raise KeyError(f"Spalte '{RUNNAME_COL}' fehlt im DataFrame.")
 
-    seed_pattern = re.compile(r"seed-(\d+)")
-    fold_pattern = re.compile(r"fold-(\d+)-of-")
+    parsed = df[RUNNAME_COL].apply(
+        lambda name: parse_run_name(name) if isinstance(name, str) else None
+    )
+    parsed_df = pd.json_normalize(parsed)  # None -> Zeile mit NaNs
 
-    df["seed_index"] = df[RUNNAME_COL].apply(lambda x: extract_number(seed_pattern, x))
-    df["fold_index"] = df[RUNNAME_COL].apply(lambda x: extract_number(fold_pattern, x))
-    
+    out = pd.concat([df.reset_index(drop=True), parsed_df.reset_index(drop=True)], axis=1)
+
+    n_unparsed = parsed_df["seed_index"].isna().sum() if "seed_index" in parsed_df else len(out)
+    if n_unparsed:
+        print(f"[warn] {n_unparsed} Run(s) konnten nicht anhand des Run-Namens geparst werden.")
+
+    return out
+
+
+def filter_seed_and_fold_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Filtert auf bereits geparste seed_index/fold_index-Spalten (siehe add_parsed_columns)."""
+    if "seed_index" not in df.columns or "fold_index" not in df.columns:
+        raise KeyError(
+            "'seed_index'/'fold_index' fehlen im DataFrame. "
+            "Vorher add_parsed_columns() aufrufen."
+        )
+
     filtered_df = df[
-        df["seed_index"].between(0, 4) 
+        df["seed_index"].between(0, 4)
         & df["fold_index"].between(1, 20)
     ].copy()
+
+    filtered_df["seed_index"] = filtered_df["seed_index"].astype(int)
+    filtered_df["fold_index"] = filtered_df["fold_index"].astype(int)
 
     print(f"Nach Filter: {len(filtered_df)} Zeilen übrig.")
     return filtered_df
@@ -212,23 +235,42 @@ def extract_per_iteration_rows(client: MlflowClient, run_id: str, run_info: dict
 
     return rows
 
+def validate_row_counts(df: pd.DataFrame, n_iter: int, expected_seeds: int = 5, expected_folds: int = 20) -> None:
+    """Prüft, ob die erwartete Anzahl an Zeilen pro Run vorhanden ist (n_iter)."""
+    grouped = df.groupby(["config_id", "dataset"])
+
+    for (config_id, dataset), group in grouped:
+        
+        expected_rows = n_iter * expected_seeds * expected_folds
+
+        actual_rows = len(group)
+        if actual_rows != expected_rows:
+            warnings.warn(
+                f"Run {config_id} / {dataset}: "
+                f"erwartet {expected_rows} Zeilen, gefunden {actual_rows}."
+            )
+
 
 def main():
     client = MlflowClient()
     fold_runs_df = get_fold_runs()
-    filtered_fold_runs_df = filter_seed_and_fold_index(fold_runs_df)
+    parsed_df = add_parsed_columns(fold_runs_df)
+    filtered_fold_runs_df = filter_seed_and_fold_index(parsed_df)
     print("Found and Filtered Fold Runs")
 
     all_rows: list[dict] = []
     skipped = 0
 
     for _, row in filtered_fold_runs_df.iterrows():
-        run_name = row.get(RUNNAME_COL)
-        info = parse_run_name(run_name) if isinstance(run_name, str) else None
-        if info is None:
-            skipped += 1
-            continue
-
+        info = {
+            "dataset": row["dataset"],
+            "n_iter": int(row["n_iter"]),
+            "n_rules": int(row["n_rules"]),
+            "n_initial_rules": int(row["n_initial_rules"]),
+            "label": row["label"],
+            "seed_index": int(row["seed_index"]),
+            "fold_index": int(row["fold_index"]),
+        }
         all_rows.extend(extract_per_iteration_rows(client, row["run_id"], info))
 
     if skipped:
@@ -241,11 +283,12 @@ def main():
         )
 
     out_df = pd.DataFrame(all_rows)
+    print("new DataFrame created")
 
-    
+    validate_row_counts(out_df, info["n_iter"])
 
     out_df = out_df.sort_values(["config_id", "dataset", "seed_index", "fold_index", "iteration"]) #"repetition_id", "iteration"])
-    out_df.to_csv("learning_curves.csv", index=False)
+    out_df.to_csv(f"{_HERE}/learning_curves.csv", index=False)
     print(f"[info] {len(out_df)} Zeilen geschrieben nach 'learning_curves.csv'")
     print(out_df.head(20).to_string(index=False))
 
