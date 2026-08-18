@@ -210,7 +210,7 @@ def run(
     
     seed_results: list[tuple] = []
 
-    seed_results = Parallel(n_jobs=N_CPU)(
+    seed_results = Parallel(n_jobs=N_CPU, max_nbytes=None)( #add max_nbytes=None to fix: FileNotFoundError: [Errno 2] No such file or directory: '/dev/shm/joblib_memmapping_folder_...'
         delayed(_evaluate_one_seed)(estimator, X, y, tuned_params, rs)
         for rs in random_states
     )
