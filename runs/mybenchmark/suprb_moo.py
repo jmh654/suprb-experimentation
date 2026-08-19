@@ -31,8 +31,9 @@ from suprb.optimizer.rule import es, origin, mutation, ns
 from suprb.solution.initialization import RandomInit
 
 from evaluation import run_evaluation
+from evaluation import run_moo_evaluation
 from mlflow_logging import log_results, log_results_multi_seed
-from tuning import run_tuning, suprb_param_space
+from tuning import run_tuning, suprb_param_space, suprb_param_space_moo
 
 import os
 from joblib import Parallel, delayed
@@ -46,7 +47,7 @@ spread = logger.metrics_["spread"][-1] """
 
 
 RANDOM_STATE = 42
-NuM_SEEDS = 5
+NUM_SEEDS = 5
 
 N_CPU = int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) 
 
@@ -76,7 +77,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB:
             early_stopping_delta=0.01,   # min. geforderte Hypervolumen-Verbesserung
             early_stopping_patience=10,  # Iterationen ohne Verbesserung, bevor abgebrochen wird
         ),
-        logger=MOLogger(),                # mologger includes default logger                                  
+        logger=CombinedLogger([("stdout", StdoutLogger()), ("default", MOLogger())]),                # mologger includes default logger                                  
         n_iter=n_iter,
         n_rules=n_rules,
         n_initial_rules=n_initial_rules,
@@ -115,7 +116,7 @@ def build_estimator(n_iter: int, n_rules: int, n_initial_rules: int) -> SupRB:
 def _evaluate_one_seed(estimator, X, y, tuned_params, rs):
         cv_splitter = ShuffleSplit(n_splits=20, test_size=0.25, random_state=int(rs))
         print(f"[evaluation] [{datetime.now():%Y-%m-%d %H:%M:%S}] Seed {rs} gestartet", flush=True)
-        result = run_evaluation(
+        result = run_moo_evaluation(
             estimator=estimator,
             X=X, y=y,
             tuned_params=tuned_params,
@@ -176,8 +177,8 @@ def run(
 
     study_name = f"{problem}__ni{n_iter}__nr{n_rules}__nir{n_initial_rules}__{label}"
     
-    """  if tune: 
-        sub_dir = f"{problem}"
+    if True: 
+        sub_dir = f"{problem}_{label}"
         os.makedirs(os.path.join(OPTUNA_DB_DIR, sub_dir), exist_ok=True)
         db_url = f"sqlite:///{OPTUNA_DB_DIR}/{sub_dir}/{study_name}.db" #keine gemeinsame DB der SLURM jobs, da parallele Optuna-Trials zu Konflikten führen würden. Stattdessen: separate DB pro Job/Studie.
 
@@ -186,7 +187,7 @@ def run(
             estimator=estimator,
             X=X,
             y=y,
-            param_space_fn=suprb_param_space,
+            param_space_fn=suprb_param_space_moo,
             study_name=study_name,
             storage_url=db_url,
             n_trials=1000,
@@ -195,14 +196,14 @@ def run(
             n_jobs_cv=N_CPU, #parallelität innerhalb cv jedes trials 
             n_jobs=1, #prallelität der trials, sqlite -> n_jobs=1
             random_state=RANDOM_STATE,
-            scoring="neg_mean_squared_error",
+            scoring="test_hypervolume",
             verbose=1,
         )
 
         tuning_walltime = time.perf_counter() - t0
         print(f"[tuning] Tuning completed in {tuning_walltime:.2f} seconds")
 
-        print(f"[tuning] Best Params: {tuned_params}") """
+        print(f"[tuning] Best Params: {tuned_params}")
     
     #-------------------------------------------------------------------------
     # Evaluation
@@ -210,7 +211,7 @@ def run(
     #--------------------------------------------------------------------------
     t1 = time.perf_counter()
 
-    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(NuM_SEEDS)
+    random_states = np.random.SeedSequence(RANDOM_STATE).generate_state(NUM_SEEDS)
     
     seed_results: list[tuple] = []
 

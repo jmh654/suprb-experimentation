@@ -12,8 +12,13 @@ from sklearn.utils import Bunch
 import suprb
 from suprb import rule
 from suprb.optimizer.solution import ga
+from suprb.optimizer.solution import spea2
+
+from evaluation import run_moo_evaluation
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+MOO_SCORING = {"test_hypervolume", "test_elitist_fitness"}
 
 #---------------------------------------------------------------------
 # Parameter Space
@@ -172,6 +177,146 @@ def suprb_param_space_ns(
 
     return dict(params)
 
+def suprb_param_space_moo(trial: Trial, X: np.ndarray) -> dict:
+    # ES x SPEA2
+    params = Bunch()
+
+    #ES
+    sigma_space = [0, np.sqrt(X.shape[1])]
+
+    params.rule_discovery__mutation__sigma = trial.suggest_float("rule_discovery__mutation__sigma", *sigma_space)
+    params.rule_discovery__init__fitness__alpha = trial.suggest_float(
+        "rule_discovery__init__fitness__alpha", 0.01, 0.2
+    )
+
+    # SC: SPEA2
+    params.solution_composition__crossover = trial.suggest_categorical(
+        "solution_composition__crossover", ["NPoint", "Uniform"]
+    )
+    params.solution_composition__crossover = getattr(spea2.crossover, params.solution_composition__crossover)()
+
+    if isinstance(params.solution_composition__crossover, spea2.crossover.NPoint):
+        params.solution_composition__crossover__n = trial.suggest_int("solution_composition__crossover__n", 1, 10)
+
+    params.solution_composition__mutation__mutation_rate = trial.suggest_float(
+        "solution_composition__mutation_rate", 0, 0.1
+    )
+    return dict(params)
+
+
+
+def suprb_param_space_moo_ns(trial: Trial, X: np.ndarray, ns_type: str) -> dict:
+    #NS x SPEA2
+    params = Bunch()
+
+    #NS
+    sigma_space = [0, np.sqrt(X.shape[1])]
+    
+    params.rule_discovery__mutation__sigma = trial.suggest_float("mutation_sigma", *sigma_space)
+    params.rule_discovery__n_iter = trial.suggest_int("n_iter", 0, 20)
+    params.rule_discovery__mu = trial.suggest_int("mu", 7, 20)
+    params.rule_discovery__lmbda = trial.suggest_int("lmbda", 28, 200)
+    params.rule_discovery__roh = trial.suggest_int("roh", 10, 75)
+
+    params.rule_discovery__origin_generation = trial.suggest_categorical(
+        "origin_generation", ["UniformSamplesOrigin", "Matching", "SquaredError"]
+    )
+    params.rule_discovery__origin_generation = getattr(
+        suprb.optimizer.rule.origin, params.rule_discovery__origin_generation
+    )()
+
+    params.rule_discovery__init = trial.suggest_categorical(
+        "init", ["MeanInit", "NormalInit", "HalfnormInit"]
+    )
+    params.rule_discovery__init = getattr(rule.initialization, params.rule_discovery__init)()
+
+    params.rule_discovery__selection = trial.suggest_categorical(
+        "selection", ["RouletteWheel", "Random"]
+    )
+    params.rule_discovery__selection = getattr(
+        suprb.optimizer.rule.selection, params.rule_discovery__selection
+    )()
+
+    params.rule_discovery__mutation = trial.suggest_categorical('mutation',
+        ['Normal', 'Halfnorm','HalfnormIncrease', 'Uniform','UniformIncrease', ])
+    params.rule_discovery__mutation = getattr(
+        suprb.optimizer.rule.mutation, params.rule_discovery__mutation)()
+    
+    if ns_type is None:
+        novelty_search_type_name = trial.suggest_categorical(
+            "novelty_search_type", ["NoveltySearchType", "MinimalCriteria", "LocalCompetition"]
+        )
+    elif ns_type.upper() == "NS":
+        novelty_search_type_name = "NoveltySearchType"
+    elif ns_type.upper() == "MCNS":
+        novelty_search_type_name = "MinimalCriteria"
+    elif ns_type.upper() == "NSLC":
+        novelty_search_type_name = "LocalCompetition"
+    else:
+        raise ValueError(f"Unbekannter ns_type: {ns_type}")
+
+    params.rule_discovery__novelty_calculation__novelty_search_type = getattr(
+        suprb.optimizer.rule.ns.novelty_search_type, novelty_search_type_name
+    )()
+
+    if isinstance(
+        params.rule_discovery__novelty_calculation__novelty_search_type,
+        suprb.optimizer.rule.ns.novelty_search_type.MinimalCriteria,
+    ):
+        params.rule_discovery__novelty_calculation__novelty_search_type__min_examples_matched = (
+            trial.suggest_int("min_examples_matched", 5, 15)
+        )
+    elif isinstance(
+        params.rule_discovery__novelty_calculation__novelty_search_type,
+        suprb.optimizer.rule.ns.novelty_search_type.LocalCompetition,
+    ):
+        params.rule_discovery__novelty_calculation__novelty_search_type__max_neighborhood_range = (
+            trial.suggest_int("max_neighborhood_range", 10, 20)
+        )
+
+    params.rule_discovery__novelty_calculation__archive = trial.suggest_categorical(
+        "archive", ["ArchiveNovel", "ArchiveRandom", "ArchiveNone"]
+    )
+    params.rule_discovery__novelty_calculation__archive = getattr(
+        suprb.optimizer.rule.ns.archive, params.rule_discovery__novelty_calculation__archive
+    )()
+
+    params.rule_discovery__novelty_calculation = trial.suggest_categorical(
+        "novelty_calculation",
+        ["NoveltyCalculation", "ProgressiveMinimalCriteria", "NoveltyFitnessPareto", "NoveltyFitnessBiased"],
+    )
+    params.rule_discovery__novelty_calculation = getattr(
+        suprb.optimizer.rule.ns.novelty_calculation, params.rule_discovery__novelty_calculation
+    )()
+
+    if not isinstance(
+        params.rule_discovery__novelty_calculation,
+        suprb.optimizer.rule.ns.novelty_calculation.NoveltyFitnessBiased,
+    ):
+        params.rule_discovery__novelty_calculation__k_neighbor = trial.suggest_int("k_neighbor", 10, 20)
+    else:
+        params.rule_discovery__novelty_calculation__novelty_bias = trial.suggest_float("novelty_bias", 0.3, 0.7)
+
+    # TODO: maybe tune or keep fixed
+    params.rule_discovery__use_population_for_archive = trial.suggest_categorical("use_population_for_archive", [True, False])
+
+
+    # SC: SPEA2
+    params.solution_composition__crossover = trial.suggest_categorical(
+        "solution_composition__crossover", ["NPoint", "Uniform"]
+    )
+    params.solution_composition__crossover = getattr(spea2.crossover, params.solution_composition__crossover)()
+
+    if isinstance(params.solution_composition__crossover, spea2.crossover.NPoint):
+        params.solution_composition__crossover__n = trial.suggest_int("solution_composition__crossover__n", 1, 10)
+
+    params.solution_composition__mutation__mutation_rate = trial.suggest_float(
+        "solution_composition__mutation_rate", 0, 0.1
+    )
+    return dict(params)
+
+
+
 #---------------------------------------------------------------------
 # Tuning
 #---------------------------------------------------------------------
@@ -215,17 +360,29 @@ def run_tuning(
             est = clone(estimator)
             est.set_params(**params)
             try:
-                scores = cross_validate(
-                    estimator=est,
-                    X=X,
-                    y=y,
-                    cv=cv_splitter,
-                    scoring=scoring,
-                    n_jobs=n_jobs_cv,
-                    return_estimator=False,
-                    error_score="raise",
-                )
-                return -float(np.mean(scores["test_score"]))
+                if scoring in MOO_SCORING:
+                    _, res = run_moo_evaluation(
+                        est, 
+                        X=X, 
+                        y=y, 
+                        cv=cv_splitter, 
+                        n_jobs=n_jobs_cv,  
+                        random_state = random_state,
+                        )
+                    score = res[scoring]
+                    return -float(np.mean(score))
+                else:
+                    scores = cross_validate(
+                        estimator=est,
+                        X=X,
+                        y=y,
+                        cv=cv_splitter,
+                        scoring=scoring,
+                        n_jobs=n_jobs_cv,
+                        return_estimator=False,
+                        error_score="raise",
+                    )
+                    return -float(np.mean(scores["test_score"]))
             except Exception as exc:
                 warnings.warn(f"[tuning] Trial {trial.number} failed: {exc}")
                 return float("inf")

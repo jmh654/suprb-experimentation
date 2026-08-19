@@ -11,6 +11,8 @@ from suprb import SupRB
 from suprb.logging.combination import CombinedLogger
 from suprb.logging.default import DefaultLogger
 from suprb.logging.multi_objective import MOLogger
+
+NON_SCALAR_TEST_KEYS = {"test_pf_fitness"}
  
 #MLFLOW_ENABLE_ASYNC_LOGGING = True # async logging for speed 
 # ---------------------------------------------------------------------------
@@ -24,16 +26,16 @@ def _get_default_logger(estimator: BaseEstimator) -> Optional[DefaultLogger]:
     logger = getattr(estimator, "logger_", None)
     if logger is None:
         return None
-    if isinstance(logger, DefaultLogger):
+    if isinstance(logger, (DefaultLogger, MOLogger)):
         return logger
     if isinstance(logger, CombinedLogger):
         for _, sublogger in logger.loggers_:
-            if isinstance(sublogger, DefaultLogger):
+            if isinstance(sublogger, (DefaultLogger, MOLogger)):
                 return sublogger
     return None
 
 
-def _get_mo_logger(estimator: BaseEstimator) -> Optional[MOLogger]:
+""" def _get_mo_logger(estimator: BaseEstimator) -> Optional[MOLogger]:
     if not isinstance(estimator, SupRB):
         return None
     logger = getattr(estimator, "logger_", None)
@@ -45,9 +47,9 @@ def _get_mo_logger(estimator: BaseEstimator) -> Optional[MOLogger]:
         for _, sublogger in logger.loggers_:
             if isinstance(sublogger, MOLogger):
                 return sublogger
-    return None
+    return None """
 
-def _log_mo_run(estimator: BaseEstimator) -> None:
+""" def _log_mo_run(estimator: BaseEstimator) -> None:
     mo_logger = _get_mo_logger(estimator)
     if mo_logger is None:
         return
@@ -63,7 +65,7 @@ def _log_mo_run(estimator: BaseEstimator) -> None:
     # Größe der finalen Front zusätzlich als Metrik
     last_it = max(pareto_fronts.keys())
     last_front = np.asarray(pareto_fronts[last_it])
-    mlflow.log_metric("mo_final_pareto_front_size", last_front.shape[0])
+    mlflow.log_metric("mo_final_pareto_front_size", last_front.shape[0]) """
 
  
  
@@ -98,7 +100,7 @@ def _safe_float(v) -> Optional[float]:
                 if fval is not None:
                     mlflow.log_metric(key=key, value=fval, step=step) """
  
-def _log_estimator_run(estimator: BaseEstimator) -> None:
+def _log_estimator_run(estimator, extra_pf=None) -> None:
     try:
         _safe_log_dict(estimator.get_params(), "params.json")
     except Exception as exc:
@@ -107,6 +109,15 @@ def _log_estimator_run(estimator: BaseEstimator) -> None:
     logger = _get_default_logger(estimator)
     if logger is None:
         return
+
+    if isinstance(logger, MOLogger):
+        try:
+            _safe_log_dict(logger.pareto_fronts_, "train_pareto_fronts.json")
+        except Exception as exc:
+            warnings.warn(f"[mlflow] Pareto-Fronten-Log fehlgeschlagen: {exc}")
+
+    # if extra_pf is not None:
+    #     _safe_log_dict({"test_pf_fitness": extra_pf}, "test_pareto_front.json")
 
     by_step: dict[int, dict[str, float]] = {} # pro step: {key: value}
     for key, values in logger.metrics_.items():
@@ -118,7 +129,7 @@ def _log_estimator_run(estimator: BaseEstimator) -> None:
     for step, metrics in sorted(by_step.items()):
         mlflow.log_metrics(metrics, step=step) # log_metrics per step, not per (key, step) pair, asnc :synchronous=False
     
-    _log_mo_run(estimator)
+    #_log_mo_run(estimator)
  
 def _log_scalar_metrics(results: dict) -> None:
     metrics = {}
@@ -128,6 +139,11 @@ def _log_scalar_metrics(results: dict) -> None:
             metrics[key] = fval
     if metrics:
         mlflow.log_metrics(metrics)  #sync/asnc :synchronous=False
+
+def _log_non_scalar_fold_result(fold_result: dict) -> None:
+    for key in NON_SCALAR_TEST_KEYS:
+        if key in fold_result:
+            _safe_log_dict({key: fold_result[key]}, f"{key}.json")
  
  
 # ---------------------------------------------------------------------------
@@ -143,7 +159,8 @@ def log_results(
     estimators: list[BaseEstimator],
 ) -> None:
     n_folds = len(estimators)
-    fold_metric_keys = [k for k in cv_results if k.startswith("test_")]
+    fold_metric_keys = [k for k in cv_results if k.startswith("test_") and k not in NON_SCALAR_TEST_KEYS]
+    non_scalar_keys = [k for k in cv_results if k in NON_SCALAR_TEST_KEYS]
     extra_keys = [k for k in ("fit_time", "score_time") if k in cv_results]
  
     with mlflow.start_run(run_name=run_name):
@@ -167,10 +184,13 @@ def log_results(
                 arr = cv_results.get(k)
                 if arr is not None:
                     fold_result[k] = float(arr[i])
+            
+            for k in non_scalar_keys:
+                fold_result[k] = cv_results[k][i]
  
             # Skalare aus y_scaler-Einträgen (skalare Werte, keine Arrays)
             for k, v in cv_results.items():
-                if k not in fold_metric_keys + extra_keys and np.isscalar(v):
+                if k not in fold_metric_keys + extra_keys + non_scalar_keys and np.isscalar(v):
                     fold_result[k] = float(v)
  
             with mlflow.start_run(
@@ -179,12 +199,16 @@ def log_results(
                 mlflow.set_tag("fold", True)
                 mlflow.set_tag("fold_index", i + 1)
                 _log_estimator_run(estimator)
+                _log_non_scalar_fold_result(fold_result)
                 _log_scalar_metrics(fold_result)
                 #mlflow.flush_async_logging() #async logging flush
  
         # Aggregierte Metriken im Parent-Run
         aggregated: dict[str, float] = {}
-        for k, v in cv_results.items():
+        for k in fold_metric_keys + extra_keys:
+            v = cv_results.get(k)
+            if v is None:
+                continue
             arr = np.asarray(v, dtype=float) if not np.isscalar(v) else np.array([float(v)])
             aggregated[f"{k}_mean"] = float(np.mean(arr))
             if arr.size > 1:
@@ -226,7 +250,8 @@ def log_results_multi_seed(
         for i, (estimators, cv_results) in enumerate(seed_results):
             rs = int(random_states[i])
             n_folds = len(estimators)
-            fold_metric_keys = [k for k in cv_results if k.startswith("test_")]
+            fold_metric_keys = [k for k in cv_results if k.startswith("test_") and k not in NON_SCALAR_TEST_KEYS]
+            non_scalar_keys = [k for k in cv_results if k in NON_SCALAR_TEST_KEYS]
             extra_keys = [k for k in ("fit_time", "score_time") if k in cv_results]
 
             with mlflow.start_run(run_name=f"{run_name}.seed-{i}", nested=True):
@@ -241,8 +266,12 @@ def log_results_multi_seed(
                         arr = cv_results.get(k)
                         if arr is not None:
                             fold_result[k] = float(arr[j])
+
+                    for k in non_scalar_keys:
+                        fold_result[k] = cv_results[k][j]
+        
                     for k, v in cv_results.items():
-                        if k not in fold_metric_keys + extra_keys and np.isscalar(v):
+                        if k not in fold_metric_keys + extra_keys + non_scalar_keys and np.isscalar(v):
                             fold_result[k] = float(v)
 
                     with mlflow.start_run(
@@ -252,11 +281,15 @@ def log_results_multi_seed(
                         mlflow.set_tag("fold", True)
                         mlflow.set_tag("fold_index", j + 1)
                         _log_estimator_run(estimator)
+                        _log_non_scalar_fold_result(fold_result)
                         _log_scalar_metrics(fold_result)
 
                 # Gemittelte CV-Scores für diesen Seed + std
                 seed_metrics = {}
-                for k, v in cv_results.items():
+                for k in fold_metric_keys + extra_keys:
+                    v = cv_results.get(k)
+                    if v is None:
+                        continue
                     arr = np.asarray(v, dtype=float)
                     seed_metrics[f"{k}_mean"] = float(np.mean(arr))
                     if arr.size > 1:
@@ -265,7 +298,7 @@ def log_results_multi_seed(
                 seed_averages.append(seed_metrics)
 
         # Über alle Seeds mitteln → Parent Run
-        all_keys = set().union(*seed_averages)
+        all_keys = set().union(*seed_averages) if seed_averages else set()
         aggregated: dict[str, float] = {}
         for k in all_keys:
             vals = [d[k] for d in seed_averages if k in d]
