@@ -189,3 +189,19 @@ def load_protein_structure(return_X_y: bool = True, as_frame: bool = False, samp
         """
     return load_dataset(filename='protein_structure.csv', target_column='RMSD', return_X_y=return_X_y,
                         as_frame=as_frame)
+
+
+def load_197_cpu_act(return_X_y: bool = True, as_frame: bool = False):
+    """PMLB regression dataset, 8192 samples, 21 features."""
+    return load_dataset(filename='197_cpu_act.csv', target_column='target',
+                        return_X_y=return_X_y, as_frame=as_frame)
+
+def load_218_house_8L(return_X_y: bool = True, as_frame: bool = False):
+    """PMLB regression dataset, 22784 samples, 8 features."""
+    return load_dataset(filename='218_house_8L.csv', target_column='target',
+                        return_X_y=return_X_y, as_frame=as_frame)
+
+def load_503_wind(return_X_y: bool = True, as_frame: bool = False):
+    """PMLB regression dataset, 6574 samples, 14 features."""
+    return load_dataset(filename='503_wind.csv', target_column='target',
+                        return_X_y=return_X_y, as_frame=as_frame)

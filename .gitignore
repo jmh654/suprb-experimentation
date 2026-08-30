@@ -6,6 +6,9 @@ mlruns*
 *.csv
 logging_output_scripts/outputs/
 
+# Exeption for datasets
+!problems/datasets/data/*.csv
+
 # SLURM
 output/**
 */output/**
